@@ -4,6 +4,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.entity.Hopper;
 import net.minecraft.world.level.block.entity.HopperBlockEntity;
 import net.minecraft.world.entity.vehicle.MinecartHopper;
+import net.minecraft.world.Container;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
@@ -56,22 +58,33 @@ public abstract class HopperBlockEntityMixin {
         BooleanSupplier BS,
         CallbackInfoReturnable<Boolean> CIR
     ) {
-        // I could not care less about being granular here and allowing inserting
-        // and not extracting after having to deal with fabric’s asinine API design;
-        // if a hopper is touching a protected block, then fuck you, nothing is going
-        // to move anywhere.
+        // handle dest container
         Direction Facing = ((HopperBlockEntityAccessor) BE).getFacing();
-        
-        // continue only if insert container has the same lock (or both are null)
         BlockPos ToPos = Pos.relative(Facing);
-        LockableBlockEntity ToBE = KeyItem.GetLockableEntity(W, ToPos);
-        if (ToBE != null && ((LockableBlockEntity) BE).Nguhcraft$GetLock() != ToBE.Nguhcraft$GetLock())
-            CIR.setReturnValue(false);
+        Container Dest = HopperBlockEntity.getContainerAt(W, ToPos);
+        if (Dest instanceof Entity) {
+            // do nothing if the hopper is locked and dest is an entity (container minecarts, eg)
+            if (((LockableBlockEntity) BE).Nguhcraft$GetLock() != null)
+                CIR.setReturnValue(false);
+        } else {
+            // continue only if dest container has the same lock (or both are null)
+            LockableBlockEntity ToBE = (LockableBlockEntity) Dest;
+            if (ToBE != null && ((LockableBlockEntity) BE).Nguhcraft$GetLock() != ToBE.Nguhcraft$GetLock())
+                CIR.setReturnValue(false);
+        }
         
-        // continue only if extract container has the same lock (or both are null)
+        // handle source container
         BlockPos FromPos = Pos.above();
-        LockableBlockEntity FromBE = KeyItem.GetLockableEntity(W, FromPos);
-        if (FromBE != null && ((LockableBlockEntity) BE).Nguhcraft$GetLock() != FromBE.Nguhcraft$GetLock())
-            CIR.setReturnValue(false);
+        Container Source = HopperBlockEntity.getContainerAt(W, FromPos);
+        if (Source instanceof Entity) {
+            // do nothing if the hopper is locked and dest is an entity (container minecarts, eg)
+            if (((LockableBlockEntity) BE).Nguhcraft$GetLock() != null)
+                CIR.setReturnValue(false);
+        } else {
+            // continue only if source container has the same lock (or both are null)
+            LockableBlockEntity FromBE = (LockableBlockEntity) Source;
+            if (FromBE != null && ((LockableBlockEntity) BE).Nguhcraft$GetLock() != FromBE.Nguhcraft$GetLock())
+                CIR.setReturnValue(false);
+        }
     }
 }
