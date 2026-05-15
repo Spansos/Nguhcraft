@@ -1,90 +1,70 @@
 package org.nguh.nguhcraft.mixin.protect.server;
 
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.entity.Hopper;
-import net.minecraft.world.level.block.entity.HopperBlockEntity;
-import net.minecraft.world.entity.vehicle.MinecartHopper;
 import net.minecraft.world.Container;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.world.level.Level;
-import org.nguh.nguhcraft.item.KeyItem;
+import net.minecraft.world.level.block.entity.HopperBlockEntity;
 import org.nguh.nguhcraft.item.LockableBlockEntity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-
-import java.util.function.BooleanSupplier;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
+import com.llamalad7.mixinextras.injector.ModifyReturnValue;
+import com.llamalad7.mixinextras.sugar.Local;
 
 @Mixin(HopperBlockEntity.class)
 public abstract class HopperBlockEntityMixin {
-    /** As below. Used also by hopper minecarts. */
-    @Inject(
-        method = "suckInItems(Lnet/minecraft/world/level/Level;Lnet/minecraft/world/level/block/entity/Hopper;)Z",
-        at = @At("HEAD"),
-        cancellable = true
+    /**
+    * Prevent hoppers & hopper minecarts from taking items from locked inventories.
+    * <p>
+    * canTakeItemFromContainer is called to check if a hopper (minecart) can take an item from a container.
+    * Overwriting the return value to false if the hopper isnt permitted to take items.
+    */
+    @ModifyReturnValue(
+        method = "canTakeItemFromContainer",
+        at = @At("RETURN")
     )
-    private static void inject$extract(Level W, Hopper H, CallbackInfoReturnable<Boolean> CIR) {
-        BlockPos Pos = BlockPos.containing(H.getLevelX(), H.getLevelY() + 1.0, H.getLevelZ());
-        LockableBlockEntity LBE = KeyItem.GetLockableEntity(W, Pos);
-        // minecart hopper can never interact with any locked containers.
-        // only the minecart case needs to be handled here, normal hoppers only call this function from insertAndExtract
-        if (H instanceof MinecartHopper && LBE != null && LBE.Nguhcraft$GetLock() != null)
-            CIR.setReturnValue(false);
+    private static boolean inject$mayExtract(boolean Original, @Local(ordinal = 0) Container Hopper, @Local(ordinal = 1) Container Source) {
+        // return false if it failed original check
+        if (!Original)
+            return false;
+
+        // if the hopper is a minecart hopper
+        if (!(Hopper instanceof LockableBlockEntity)) {
+            // if the source container is a minecart container
+            if (!(Source instanceof LockableBlockEntity))
+                return true;
+            // check for lock if the source container is a block entity
+            return ((LockableBlockEntity) Source).Nguhcraft$GetLock() == null;
+        }
+        
+        // if the source is a minecart container
+        if (!(Source instanceof LockableBlockEntity))
+            return ((LockableBlockEntity) Hopper).Nguhcraft$GetLock() == null;
+
+        // check if locks match
+        return ((LockableBlockEntity) Hopper).Nguhcraft$GetLock() == ((LockableBlockEntity) Source).Nguhcraft$GetLock();
     }
 
     /**
-    * Prevent hoppers from accessing protected inventories.
+    * Prevent hoppers from putting items into locked inventories.
     * <p>
-    * Thanks to whatever FUCKING MORON designed the part of the fabric
-    * API that overrides the hopper code TO STILL PERFORM THE TRANSFER
-    * inside of the functions THAT RETRIEVE THE INVENTORIES to transfer
-    * from/to, we need to perform this check early, instead of doing the
-    * SENSIBLE thing and simply returning null for the input and output
-    * inventories.
+    * This code sets the Container variable used in ejectItems as destination container to null,
+    * if the hopper is not permitted to store any items there.
     */
-    @Inject(
-        method = "tryMoveItems",
-        at = @At("HEAD"),
-        cancellable = true
+    @ModifyVariable(
+        method = "ejectItems",
+        at = @At(value = "STORE")
     )
-    private static void inject$insertAndExtract(
-        Level W,
-        BlockPos Pos,
-        BlockState St,
-        HopperBlockEntity BE,
-        BooleanSupplier BS,
-        CallbackInfoReturnable<Boolean> CIR
-    ) {
-        // handle dest container
-        Direction Facing = ((HopperBlockEntityAccessor) BE).getFacing();
-        BlockPos ToPos = Pos.relative(Facing);
-        Container Dest = HopperBlockEntity.getContainerAt(W, ToPos);
-        if (Dest instanceof Entity) {
-            // do nothing if the hopper is locked and dest is an entity (container minecarts, eg)
-            if (((LockableBlockEntity) BE).Nguhcraft$GetLock() != null)
-                CIR.setReturnValue(false);
-        } else {
-            // continue only if dest container has the same lock (or both are null)
-            LockableBlockEntity ToBE = (LockableBlockEntity) Dest;
-            if (ToBE != null && ((LockableBlockEntity) BE).Nguhcraft$GetLock() != ToBE.Nguhcraft$GetLock())
-                CIR.setReturnValue(false);
-        }
-        
-        // handle source container
-        BlockPos FromPos = Pos.above();
-        Container Source = HopperBlockEntity.getContainerAt(W, FromPos);
-        if (Source instanceof Entity) {
-            // do nothing if the hopper is locked and dest is an entity (container minecarts, eg)
-            if (((LockableBlockEntity) BE).Nguhcraft$GetLock() != null)
-                CIR.setReturnValue(false);
-        } else {
-            // continue only if source container has the same lock (or both are null)
-            LockableBlockEntity FromBE = (LockableBlockEntity) Source;
-            if (FromBE != null && ((LockableBlockEntity) BE).Nguhcraft$GetLock() != FromBE.Nguhcraft$GetLock())
-                CIR.setReturnValue(false);
-        }
+    private static Container inject$insert(Container Dest, @Local HopperBlockEntity Hopper) {
+        LockableBlockEntity LBE = (LockableBlockEntity)Hopper;
+    
+        // if dest isnt a lockableblockentity (container minecarts, eg) then always refuse if locked
+        if (!(Dest instanceof LockableBlockEntity) && LBE.Nguhcraft$GetLock() != null)
+            return null;
+
+        // if dest is a lockableblockentity, then compare locks and disallow if they dont match (both unlocked counts as matching)
+        if (Dest instanceof LockableBlockEntity && LBE.Nguhcraft$GetLock() != ((LockableBlockEntity)Dest).Nguhcraft$GetLock())
+            return null;
+
+        // if all lock checks succeed, then just return the original value
+        return Dest;
     }
 }

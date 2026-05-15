@@ -59,7 +59,6 @@
         "protect.server.FeatureMixin",
         "protect.server.FireBlockMixin",
         "protect.server.FishingHookMixin",
-        "protect.server.HopperBlockEntityAccessor",
         "protect.server.HopperBlockEntityMixin",
         "protect.server.LavaFluidMixin",
         "protect.server.LecternBlockEntityMixin",
